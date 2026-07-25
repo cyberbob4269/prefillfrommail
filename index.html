@@ -37,7 +37,7 @@
     <h1>PrefillFromMail</h1>
     <p id="msg">Confirming your payment…</p>
     <div id="ok" hidden>
-      <p>Your license key (up to <strong>3</strong> Google Sheet copies):</p>
+      <p>Your license key (keep this — up to <strong>3</strong> Google Sheet copies when activation server is on):</p>
       <div class="keybox" id="key"></div>
       <p class="muted" id="meta"></p>
       <p><a class="btn" id="copyLink" href="#" target="_blank" rel="noopener">Make a copy (Chrome)</a></p>
@@ -47,10 +47,8 @@
         <li>PrefillFromMail → Save license key → paste this key.</li>
         <li>Save SafetyCulture API key → Test → First-time setup.</li>
       </ol>
-      <p class="muted">Saving the key registers this sheet copy (key + sheet ID only).</p>
     </div>
   </main>
-  <script src="config.js"></script>
   <script>
     (async () => {
       const params = new URLSearchParams(location.search);
@@ -61,40 +59,48 @@
         msg.textContent = "Missing session_id. Open this page from Stripe checkout.";
         return;
       }
-      const bases = (window.PFM_API_BASES || []).filter(Boolean);
-      if (!bases.length) {
-        msg.className = "err";
-        msg.textContent = "Unlock API not configured. Email scott@netwrxsolutions.com with session: " + sessionId;
-        return;
-      }
-      let lastErr = "unknown";
-      for (const base of bases) {
-        try {
-          const res = await fetch(
-            base.replace(/\/$/, "") + "/api/pfm/unlock?session_id=" + encodeURIComponent(sessionId)
-          );
-          const data = await res.json();
-          if (!res.ok || !data.ok) {
-            lastErr = data.error || ("HTTP " + res.status);
-            continue;
+      // Keys are published to this same GitHub Pages repo after Stripe pay (Vera mint → gh).
+      // session_id is a long secret capability URL — no Cloudflare needed.
+      const urls = [
+        "./keys/" + encodeURIComponent(sessionId) + ".json",
+        "https://raw.githubusercontent.com/cyberbob4269/prefillfrommail/main/keys/" +
+          encodeURIComponent(sessionId) + ".json",
+      ];
+      let lastErr = "not ready yet";
+      for (let attempt = 0; attempt < 8; attempt++) {
+        for (const url of urls) {
+          try {
+            const res = await fetch(url + (url.includes("raw.githubusercontent") ? "?t=" + Date.now() : ""));
+            if (!res.ok) {
+              lastErr = "HTTP " + res.status;
+              continue;
+            }
+            const data = await res.json();
+            if (!data.ok || !data.key) {
+              lastErr = data.error || "bad payload";
+              continue;
+            }
+            msg.textContent = "Payment confirmed. Save your key.";
+            document.getElementById("key").textContent = data.key;
+            document.getElementById("meta").textContent =
+              "Tier: " + (data.tier || "kit") +
+              " · Activations left: " + data.remaining + " of " + data.max_activations;
+            document.getElementById("copyLink").href = data.make_copy_url;
+            document.getElementById("ok").hidden = false;
+            return;
+          } catch (e) {
+            lastErr = String(e);
           }
-          msg.textContent = "Payment confirmed. Save your key.";
-          document.getElementById("key").textContent = data.key;
-          document.getElementById("meta").textContent =
-            "Tier: " + (data.tier || "kit") +
-            " · Activations left: " + data.remaining + " of " + data.max_activations;
-          document.getElementById("copyLink").href = data.make_copy_url;
-          document.getElementById("ok").hidden = false;
-          return;
-        } catch (e) {
-          lastErr = String(e);
         }
+        msg.textContent = "Waiting for license publish… (" + (attempt + 1) + "/8)";
+        await new Promise((r) => setTimeout(r, 2000));
       }
       msg.className = "err";
       msg.innerHTML =
-        "Could not reach unlock API (" + lastErr + ").<br><br>" +
-        "Email <strong>scott@netwrxsolutions.com</strong> with this session id:<br><code>" +
-        sessionId + "</code>";
+        "License file not published yet for this payment.<br><br>" +
+        "Session: <code>" + sessionId + "</code><br>" +
+        "Email scott@netwrxsolutions.com if this persists.<br><br>" +
+        "(" + lastErr + ")";
     })();
   </script>
 </body>
