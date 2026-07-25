@@ -79,6 +79,36 @@ def publish_license(rec: dict[str, Any]) -> None:
         text,
         f"key index {key}",
     )
+    # Pending license email for Apps Script MailApp drain (if not yet emailed)
+    if not rec.get("emailed_at") and body.get("email"):
+        pending = {
+            "to": body["email"],
+            "key": key,
+            "tier": body["tier"],
+            "session_id": session_id,
+        }
+        put_file(
+            f"email-pending/{session_id}.json",
+            json.dumps(pending, indent=2) + "\n",
+            f"email pending {session_id[:20]}…",
+        )
+        # Maintain index for the MailApp poller
+        index_path = "email-pending/index.json"
+        try:
+            existing = gh_api("GET", f"repos/{REPO}/contents/{index_path}")
+            raw = base64.b64decode(existing.get("content") or "").decode("utf-8")
+            index = json.loads(raw)
+            if not isinstance(index, list):
+                index = []
+        except Exception:
+            index = []
+        if session_id not in index:
+            index.append(session_id)
+            put_file(
+                index_path,
+                json.dumps(index, indent=2) + "\n",
+                "email pending index",
+            )
     print("published", session_id, key)
 
 
