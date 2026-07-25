@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PrefillFromMail — your license</title>
   <style>
+    :root { color-scheme: light; }
     body {
       margin: 0; min-height: 100vh; display: grid; place-items: center;
       font-family: "Segoe UI", system-ui, sans-serif;
@@ -16,20 +17,24 @@
       background: rgba(255,255,255,0.92); border-radius: 12px;
       box-shadow: 0 12px 40px rgba(20,40,30,0.08);
     }
-    h1 { font-size: 1.55rem; margin: 0 0 0.4rem; }
-    p { color: #3d4740; line-height: 1.55; }
+    h1 { font-weight: 650; letter-spacing: -0.02em; margin: 0 0 0.4rem; font-size: 1.55rem; }
+    p { color: #3d4740; line-height: 1.55; margin: 0.65rem 0; }
     .keybox {
-      font-family: ui-monospace, Consolas, monospace; font-size: 1.05rem;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 1.05rem; letter-spacing: 0.04em;
       padding: 0.85rem 1rem; background: #0f1a14; color: #b8f0c8;
       border-radius: 8px; word-break: break-all; margin: 1rem 0;
     }
-    a.btn {
+    a.btn, button.btn {
       display: inline-block; margin: 0.4rem 0.5rem 0.4rem 0; padding: 0.8rem 1.25rem;
       background: #1b4d36; color: #f4fff8; text-decoration: none;
-      border-radius: 8px; font-weight: 600;
+      border-radius: 8px; font-weight: 600; border: 0; cursor: pointer;
+      font-family: inherit; font-size: 1rem;
     }
+    a.btn.secondary, button.btn.secondary { background: #2a3540; }
     .err { color: #a32020; font-weight: 600; }
     .muted { font-size: 0.85rem; color: #66706a; }
+    ol { padding-left: 1.2rem; color: #3d4740; line-height: 1.5; }
   </style>
 </head>
 <body>
@@ -37,16 +42,21 @@
     <h1>PrefillFromMail</h1>
     <p id="msg">Confirming your payment…</p>
     <div id="ok" hidden>
-      <p>Your license key (keep this — up to <strong>3</strong> Google Sheet copies when activation server is on):</p>
+      <p>Your license key (up to <strong>3</strong> Google Sheet copies):</p>
       <div class="keybox" id="key"></div>
       <p class="muted" id="meta"></p>
-      <p><a class="btn" id="copyLink" href="#" target="_blank" rel="noopener">Make a copy (Chrome)</a></p>
+      <p>
+        <button type="button" class="btn secondary" id="copyKey">Copy key</button>
+        <a class="btn" id="copyLink" href="#" target="_blank" rel="noopener">Make a copy (Chrome)</a>
+      </p>
       <ol>
-        <li>Make a copy in Google Chrome.</li>
+        <li>Click <strong>Copy key</strong>.</li>
+        <li>Click <strong>Make a copy (Chrome)</strong> — use Google Chrome.</li>
         <li>Allow access when prompted.</li>
-        <li>PrefillFromMail → Save license key → paste this key.</li>
-        <li>Save SafetyCulture API key → Test → First-time setup.</li>
+        <li>Menu: PrefillFromMail → Save license key → paste.</li>
+        <li>Save SafetyCulture API key → Test token → First-time setup.</li>
       </ol>
+      <p class="muted">NetWRX Solutions — we do not log into your Gmail.</p>
     </div>
   </main>
   <script>
@@ -54,13 +64,12 @@
       const params = new URLSearchParams(location.search);
       const sessionId = params.get("session_id") || "";
       const msg = document.getElementById("msg");
+      const ok = document.getElementById("ok");
       if (!sessionId) {
         msg.className = "err";
-        msg.textContent = "Missing session_id. Open this page from Stripe checkout.";
+        msg.textContent = "Missing session_id. Open this page from your Stripe checkout confirmation.";
         return;
       }
-      // Keys are published to this same GitHub Pages repo after Stripe pay (Vera mint → gh).
-      // session_id is a long secret capability URL — no Cloudflare needed.
       const urls = [
         "./keys/" + encodeURIComponent(sessionId) + ".json",
         "https://raw.githubusercontent.com/cyberbob4269/prefillfrommail/main/keys/" +
@@ -70,7 +79,8 @@
       for (let attempt = 0; attempt < 8; attempt++) {
         for (const url of urls) {
           try {
-            const res = await fetch(url + (url.includes("raw.githubusercontent") ? "?t=" + Date.now() : ""));
+            const stamp = url.includes("raw.githubusercontent") ? "?t=" + Date.now() : "";
+            const res = await fetch(url + stamp);
             if (!res.ok) {
               lastErr = "HTTP " + res.status;
               continue;
@@ -86,7 +96,14 @@
               "Tier: " + (data.tier || "kit") +
               " · Activations left: " + data.remaining + " of " + data.max_activations;
             document.getElementById("copyLink").href = data.make_copy_url;
-            document.getElementById("ok").hidden = false;
+            document.getElementById("copyKey").onclick = () => {
+              navigator.clipboard.writeText(data.key).then(() => {
+                document.getElementById("copyKey").textContent = "Copied";
+              }).catch(() => {
+                prompt("Copy this key:", data.key);
+              });
+            };
+            ok.hidden = false;
             return;
           } catch (e) {
             lastErr = String(e);
