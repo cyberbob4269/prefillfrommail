@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PrefillFromMail — your license</title>
+  <style>
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: linear-gradient(165deg, #e8f0ea 0%, #f7f5f0 45%, #dfe8f2 100%);
+      color: #1a1f1c;
+    }
+    main {
+      max-width: 32rem; width: calc(100% - 2rem); padding: 2rem 1.75rem;
+      background: rgba(255,255,255,0.92); border-radius: 12px;
+      box-shadow: 0 12px 40px rgba(20,40,30,0.08);
+    }
+    h1 { font-size: 1.55rem; margin: 0 0 0.4rem; }
+    p { color: #3d4740; line-height: 1.55; }
+    .keybox {
+      font-family: ui-monospace, Consolas, monospace; font-size: 1.05rem;
+      padding: 0.85rem 1rem; background: #0f1a14; color: #b8f0c8;
+      border-radius: 8px; word-break: break-all; margin: 1rem 0;
+    }
+    a.btn {
+      display: inline-block; margin: 0.4rem 0.5rem 0.4rem 0; padding: 0.8rem 1.25rem;
+      background: #1b4d36; color: #f4fff8; text-decoration: none;
+      border-radius: 8px; font-weight: 600;
+    }
+    .err { color: #a32020; font-weight: 600; }
+    .muted { font-size: 0.85rem; color: #66706a; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>PrefillFromMail</h1>
+    <p id="msg">Confirming your payment…</p>
+    <div id="ok" hidden>
+      <p>Your license key (up to <strong>3</strong> Google Sheet copies):</p>
+      <div class="keybox" id="key"></div>
+      <p class="muted" id="meta"></p>
+      <p><a class="btn" id="copyLink" href="#" target="_blank" rel="noopener">Make a copy (Chrome)</a></p>
+      <ol>
+        <li>Make a copy in Google Chrome.</li>
+        <li>Allow access when prompted.</li>
+        <li>PrefillFromMail → Save license key → paste this key.</li>
+        <li>Save SafetyCulture API key → Test → First-time setup.</li>
+      </ol>
+      <p class="muted">Saving the key registers this sheet copy (key + sheet ID only).</p>
+    </div>
+  </main>
+  <script src="config.js"></script>
+  <script>
+    (async () => {
+      const params = new URLSearchParams(location.search);
+      const sessionId = params.get("session_id") || "";
+      const msg = document.getElementById("msg");
+      if (!sessionId) {
+        msg.className = "err";
+        msg.textContent = "Missing session_id. Open this page from Stripe checkout.";
+        return;
+      }
+      const bases = (window.PFM_API_BASES || []).filter(Boolean);
+      if (!bases.length) {
+        msg.className = "err";
+        msg.textContent = "Unlock API not configured. Email scott@netwrxsolutions.com with session: " + sessionId;
+        return;
+      }
+      let lastErr = "unknown";
+      for (const base of bases) {
+        try {
+          const res = await fetch(
+            base.replace(/\/$/, "") + "/api/pfm/unlock?session_id=" + encodeURIComponent(sessionId)
+          );
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            lastErr = data.error || ("HTTP " + res.status);
+            continue;
+          }
+          msg.textContent = "Payment confirmed. Save your key.";
+          document.getElementById("key").textContent = data.key;
+          document.getElementById("meta").textContent =
+            "Tier: " + (data.tier || "kit") +
+            " · Activations left: " + data.remaining + " of " + data.max_activations;
+          document.getElementById("copyLink").href = data.make_copy_url;
+          document.getElementById("ok").hidden = false;
+          return;
+        } catch (e) {
+          lastErr = String(e);
+        }
+      }
+      msg.className = "err";
+      msg.innerHTML =
+        "Could not reach unlock API (" + lastErr + ").<br><br>" +
+        "Email <strong>scott@netwrxsolutions.com</strong> with this session id:<br><code>" +
+        sessionId + "</code>";
+    })();
+  </script>
+</body>
+</html>
