@@ -102,7 +102,7 @@
       async function fetchFromWorker(base) {
         const root = base.replace(/\/$/, "");
         const url =
-          root + "/unlock?session_id=" + encodeURIComponent(sessionId);
+          root + "/api/pfm/unlock?session_id=" + encodeURIComponent(sessionId);
         const res = await fetch(url);
         if (!res.ok) {
           throw new Error("HTTP " + res.status);
