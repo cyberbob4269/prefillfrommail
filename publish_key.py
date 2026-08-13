@@ -1,58 +1,39 @@
-"""Publish PrefillFromMail unlock JSON to GitHub Pages repo (no Cloudflare)."""
+"""PrefillFromMail license helpers — local Vera store only.
+
+Licenses must NOT be published to the public GitHub Pages repo
+(cyberbob4269/prefillfrommail). They live in the private Vera store and are
+served by the Cloudflare Worker (FieldOps/google/commercial/unlock-worker,
+worker name pfm-unlock).
+"""
 from __future__ import annotations
 
-import base64
 import json
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
-REPO = "cyberbob4269/prefillfrommail"
-SITE = Path(r"C:\Users\TSLA BoT\Documents\FieldOps\google\commercial\unlock-site")
+VERA_STORE = Path(r"C:\Users\Vera-at-home\projects\vera-home\data\pfm_licenses.json")
+
+_PUBLIC_PUBLISH_MSG = (
+    "Refusing to publish license payloads to the public GitHub repo. "
+    "Licenses are stored in the private Vera store "
+    f"({VERA_STORE}) and served by the Cloudflare Worker "
+    "(FieldOps/google/commercial/unlock-worker, worker name pfm-unlock)."
+)
 
 
-def gh_api(method: str, path: str, body: dict | None = None) -> dict[str, Any]:
-    cmd = ["gh", "api", "-X", method, path]
-    if body is not None:
-        cmd.extend(["--input", "-"])
-    proc = subprocess.run(
-        cmd,
-        input=json.dumps(body).encode() if body is not None else None,
-        capture_output=True,
-    )
-    if proc.returncode != 0:
-        err = (proc.stderr or proc.stdout).decode("utf-8", errors="replace")
-        raise RuntimeError(f"gh api {method} {path} failed: {err}")
-    raw = proc.stdout.decode("utf-8", errors="replace").strip()
-    return json.loads(raw) if raw else {}
+def load_vera_store() -> dict[str, Any]:
+    """Load the private Vera license store (local only)."""
+    return json.loads(VERA_STORE.read_text(encoding="utf-8"))
 
 
-def put_file(path: str, content: str, message: str) -> None:
-    """Create or update a file in REPO via Contents API."""
-    api_path = f"repos/{REPO}/contents/{path}"
-    existing_sha = None
-    try:
-        existing = gh_api("GET", api_path)
-        existing_sha = existing.get("sha")
-    except RuntimeError:
-        existing_sha = None
-    payload: dict[str, Any] = {
-        "message": message,
-        "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
-        "branch": "main",
-    }
-    if existing_sha:
-        payload["sha"] = existing_sha
-    gh_api("PUT", api_path, payload)
-
-
-def publish_license(rec: dict[str, Any]) -> None:
+def license_payload(rec: dict[str, Any]) -> dict[str, Any]:
+    """Build the unlock API payload shape from a Vera store record."""
     session_id = str(rec.get("session_id") or "")
     key = str(rec.get("key") or "")
     if not session_id or not key:
         raise ValueError("session_id and key required")
-    body = {
+    return {
         "ok": True,
         "key": key,
         "tier": rec.get("tier") or "kit",
@@ -67,68 +48,39 @@ def publish_license(rec: dict[str, Any]) -> None:
         "session_id": session_id,
         "email": rec.get("email") or "",
     }
-    text = json.dumps(body, indent=2) + "\n"
-    put_file(
-        f"keys/{session_id}.json",
-        text,
-        f"unlock {session_id[:20]}…",
-    )
-    # Lookup by key for activation checks
-    put_file(
-        f"keys/by-key/{key}.json",
-        text,
-        f"key index {key}",
-    )
-    # Pending license email for Apps Script MailApp drain (if not yet emailed)
-    if not rec.get("emailed_at") and body.get("email"):
-        pending = {
-            "to": body["email"],
-            "key": key,
-            "tier": body["tier"],
-            "session_id": session_id,
-        }
-        put_file(
-            f"email-pending/{session_id}.json",
-            json.dumps(pending, indent=2) + "\n",
-            f"email pending {session_id[:20]}…",
-        )
-        # Maintain index for the MailApp poller
-        index_path = "email-pending/index.json"
-        try:
-            existing = gh_api("GET", f"repos/{REPO}/contents/{index_path}")
-            raw = base64.b64decode(existing.get("content") or "").decode("utf-8")
-            index = json.loads(raw)
-            if not isinstance(index, list):
-                index = []
-        except Exception:
-            index = []
-        if session_id not in index:
-            index.append(session_id)
-            put_file(
-                index_path,
-                json.dumps(index, indent=2) + "\n",
-                "email pending index",
-            )
-    print("published", session_id, key)
+
+
+def publish_license(rec: dict[str, Any]) -> None:
+    """Hard error — public GitHub publish is disabled."""
+    raise RuntimeError(_PUBLIC_PUBLISH_MSG)
 
 
 def publish_from_vera_store(session_id: str | None = None) -> None:
-    vera = Path(r"C:\Users\Vera-at-home\projects\vera-home\data\pfm_licenses.json")
-    store = json.loads(vera.read_text(encoding="utf-8"))
+    """Hard error — public GitHub publish is disabled."""
+    raise SystemExit(_PUBLIC_PUBLISH_MSG)
+
+
+def lookup_license(session_id: str | None = None, key: str | None = None) -> dict[str, Any]:
+    """Local-only helper: return unlock payload from the Vera store."""
+    store = load_vera_store()
     by_session = store.get("by_session") or {}
     by_key = store.get("by_key") or {}
     if session_id:
-        key = by_session.get(session_id)
-        if not key:
+        license_key = by_session.get(session_id)
+        if not license_key:
             raise SystemExit(f"session not in Vera store: {session_id}")
-        publish_license(by_key[key])
-        return
-    for sid, key in by_session.items():
-        publish_license(by_key[key])
+        return license_payload(by_key[license_key])
+    if key:
+        rec = by_key.get(key)
+        if not rec:
+            raise SystemExit(f"key not in Vera store: {key}")
+        return license_payload(rec)
+    raise SystemExit("provide session_id or key")
 
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        publish_from_vera_store(sys.argv[1])
+        payload = lookup_license(session_id=sys.argv[1])
+        print(json.dumps(payload, indent=2))
     else:
-        publish_from_vera_store()
+        raise SystemExit(_PUBLIC_PUBLISH_MSG)
