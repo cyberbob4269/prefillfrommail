@@ -56,9 +56,10 @@
         <li>Menu: PrefillFromMail → Save license key → paste.</li>
         <li>Save SafetyCulture API key → Test token → First-time setup.</li>
       </ol>
-      <p class="muted">NetWRX Solutions — we do not log into your Gmail.</p>
+      <p class="muted">NetWRx Solutions — we do not log into your Gmail.</p>
     </div>
   </main>
+  <script src="config.js"></script>
   <script>
     (async () => {
       const params = new URLSearchParams(location.search);
@@ -70,54 +71,69 @@
         msg.textContent = "Missing session_id. Open this page from your Stripe checkout confirmation.";
         return;
       }
-      const urls = [
-        "./keys/" + encodeURIComponent(sessionId) + ".json",
-        "https://raw.githubusercontent.com/cyberbob4269/prefillfrommail/main/keys/" +
-          encodeURIComponent(sessionId) + ".json",
-      ];
-      let lastErr = "not ready yet";
+
+      const apiBases = (window.PFM_API_BASES || []).filter(Boolean);
+      if (!apiBases.length) {
+        msg.className = "err";
+        msg.innerHTML =
+          "Your payment is recorded. Email " +
+          '<a href="mailto:scott@netwrxsolutions.com">scott@netwrxsolutions.com</a> ' +
+          "for your license key.";
+        return;
+      }
+
+      function showLicense(data) {
+        msg.textContent = "Payment confirmed. Save your key.";
+        document.getElementById("key").textContent = data.key;
+        document.getElementById("meta").textContent =
+          "Tier: " + (data.tier || "kit") +
+          " · Activations left: " + data.remaining + " of " + data.max_activations;
+        document.getElementById("copyLink").href = data.make_copy_url;
+        document.getElementById("copyKey").onclick = () => {
+          navigator.clipboard.writeText(data.key).then(() => {
+            document.getElementById("copyKey").textContent = "Copied";
+          }).catch(() => {
+            prompt("Copy this key:", data.key);
+          });
+        };
+        ok.hidden = false;
+      }
+
+      async function fetchFromWorker(base) {
+        const root = base.replace(/\/$/, "");
+        const url =
+          root + "/unlock?session_id=" + encodeURIComponent(sessionId);
+        const res = await fetch(url);
+        if (!res.ok) {
+          throw new Error("HTTP " + res.status);
+        }
+        const data = await res.json();
+        if (!data.ok || !data.key) {
+          throw new Error(data.error || "bad payload");
+        }
+        return data;
+      }
+
       for (let attempt = 0; attempt < 8; attempt++) {
-        for (const url of urls) {
+        for (const base of apiBases) {
           try {
-            const stamp = url.includes("raw.githubusercontent") ? "?t=" + Date.now() : "";
-            const res = await fetch(url + stamp);
-            if (!res.ok) {
-              lastErr = "HTTP " + res.status;
-              continue;
-            }
-            const data = await res.json();
-            if (!data.ok || !data.key) {
-              lastErr = data.error || "bad payload";
-              continue;
-            }
-            msg.textContent = "Payment confirmed. Save your key.";
-            document.getElementById("key").textContent = data.key;
-            document.getElementById("meta").textContent =
-              "Tier: " + (data.tier || "kit") +
-              " · Activations left: " + data.remaining + " of " + data.max_activations;
-            document.getElementById("copyLink").href = data.make_copy_url;
-            document.getElementById("copyKey").onclick = () => {
-              navigator.clipboard.writeText(data.key).then(() => {
-                document.getElementById("copyKey").textContent = "Copied";
-              }).catch(() => {
-                prompt("Copy this key:", data.key);
-              });
-            };
-            ok.hidden = false;
+            const data = await fetchFromWorker(base);
+            showLicense(data);
             return;
-          } catch (e) {
-            lastErr = String(e);
+          } catch (_e) {
+            /* try next base / retry */
           }
         }
-        msg.textContent = "Waiting for license publish… (" + (attempt + 1) + "/8)";
+        msg.textContent = "Waiting for license… (" + (attempt + 1) + "/8)";
         await new Promise((r) => setTimeout(r, 2000));
       }
+
       msg.className = "err";
       msg.innerHTML =
-        "License file not published yet for this payment.<br><br>" +
-        "Session: <code>" + sessionId + "</code><br>" +
-        "Email scott@netwrxsolutions.com if this persists.<br><br>" +
-        "(" + lastErr + ")";
+        "We could not retrieve your license key right now.<br><br>" +
+        "Your payment is recorded. Email " +
+        '<a href="mailto:scott@netwrxsolutions.com">scott@netwrxsolutions.com</a> ' +
+        "for your key.";
     })();
   </script>
 </body>
