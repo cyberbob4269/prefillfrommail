@@ -15,7 +15,7 @@ After Stripe checkout, customers land here with a `session_id` query parameter. 
 
 ## Buy Email2Report
 
-Shop: [NetWRx Solutions](https://cyberbob4269.github.io/netwrx-solutions-website/)
+Shop: [NetWRx Solutions](https://shop.netwrxsolutions.com/)
 
 | Tier | Price |
 |------|-------|
